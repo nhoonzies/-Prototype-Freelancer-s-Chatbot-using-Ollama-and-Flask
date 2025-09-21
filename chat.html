@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Freelancer Assistant</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .chat-container {
+      width: 400px;
+      height: 600px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .chat-header {
+      background: #343a40;
+      color: #fff;
+      padding: 12px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .chat-box {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      word-wrap: break-word;
+      line-height: 1.4;
+      font-size: 14px;
+    }
+
+    .message.you {
+      align-self: flex-end;
+      background: #d1e7dd;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: #e9ecef;
+      border-bottom-left-radius: 4px;
+    }
+
+    .input-container {
+      display: flex;
+      border-top: 1px solid #ddd;
+      padding: 10px;
+      background: #f1f3f5;
+    }
+
+    #user-input {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      outline: none;
+      font-size: 14px;
+    }
+
+    #send-btn {
+      margin-left: 10px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #343a40;
+      color: white;
+      cursor: pointer;
+    }
+
+    #send-btn:hover {
+      background: #495057;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">💬 Freelancer Assistant</div>
+    <div id="chat-box" class="chat-box"></div>
+
+    <div class="input-container">
+      <input id="user-input" type="text" placeholder="Type your question..." />
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+
+ <script>
+  const chatBox = document.getElementById("chat-box");
+  const userInput = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+
+  function appendMessage(sender, text) {
+    const wrapper = document.createElement("div");
+    wrapper.classList.add("message", sender.toLowerCase());
+
+    const textElem = document.createElement("div");
+    textElem.style.whiteSpace = "pre-wrap";
+    textElem.innerHTML = text;
+
+    wrapper.appendChild(textElem);
+    chatBox.appendChild(wrapper);
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    return textElem;
+  }
+
+  // helpers
+  const isWhitespace = (ch) => /\s/.test(ch);
+  const isAlphaNum = (ch) => /\p{L}|\p{N}/u.test(ch);
+  const isLeadingPunctuation = (ch) => /^[\)\]\.,!?;:%\-\u2013\u2014'"’]$/.test(ch);
+  const isTrailingPunctuation = (ch) => /^[\.\!\?\:\;\)\]\}]$/.test(ch);
+
+  // formatting helper
+  function formatText(text) {
+    let formatted = text;
+
+    // ✅ Add line breaks after sentences
+    formatted = formatted.replace(/([.!?])\s+/g, "$1<br><br>");
+
+    // ✅ Convert numbered lists into new paragraphs
+    formatted = formatted.replace(/(\n|^)(\d+\.\s+)/g, "<br><br>$2");
+
+    // ✅ Convert dash bullets into new paragraphs
+    formatted = formatted.replace(/(\n|^)([-•]\s+)/g, "<br><br>$2");
+
+    return formatted;
+  }
+
+  async function sendMessage() {
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    appendMessage("you", text);
+    userInput.value = "";
+
+    const assistantElem = appendMessage("assistant", "");
+
+    const response = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: text })
+    });
+
+    if (!response.ok) {
+      assistantElem.textContent = "❌ Error: could not reach server.";
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      for (let i = 0; i < parts.length - 1; i++) {
+        let chunk = parts[i]
+          .replace(/^data:\s*/g, "")
+          .replace(/(^|\n)data:\s*/g, "");
+
+        if (!chunk || chunk === "[DONE]") continue;
+
+        const cur = assistantElem.innerHTML;
+        if (cur.length === 0) {
+          assistantElem.innerHTML += formatText(chunk);
+        } else {
+          const lastChar = cur.slice(-1);
+          const firstChar = chunk.charAt(0);
+
+          if (isWhitespace(lastChar)) {
+            assistantElem.innerHTML += formatText(chunk);
+          } else if (isLeadingPunctuation(firstChar)) {
+            assistantElem.innerHTML += formatText(chunk);
+          } else if (
+            (isAlphaNum(lastChar) && isAlphaNum(firstChar)) ||
+            (isTrailingPunctuation(lastChar) && isAlphaNum(firstChar))
+          ) {
+            assistantElem.innerHTML += " " + formatText(chunk);
+          } else {
+            assistantElem.innerHTML += formatText(chunk);
+          }
+        }
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      buffer = parts[parts.length - 1];
+    }
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+
+  // Send on Enter
+  userInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+</script>
+
+
+
+
+
+</body>
+</html>

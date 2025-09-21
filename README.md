@@ -7,3 +7,4 @@ Prototype of a conversational AI built using free model of Ollama that responds 
 2. Install interpreters for Python (flask, etc.)
 3. Create directory structure (templates, .py files)
 4. Copy the files
+5. Run app.py and go to default domain 
